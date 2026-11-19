@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  /// Human-friendly unique appointment ID shown to the patient, e.g. OSD-261119-K7QX2
+  code            String            @unique
+  /// Client-generated token – makes double-clicks / retries idempotent
+  submissionKey   String?           @unique
+  /// "YYYY-MM-DDTHH:mm" while the appointment occupies a slot (PENDING/CONFIRMED/COMPLETED),
+  /// NULL once rejected/cancelled. UNIQUE => the database itself prevents double booking.
+  slotKey         String?           @unique
+  patientName     String
+  /// Normalised phone, e.g. 03323259577
+  phone           String
+  email           String?
+  /// Service slug (see src/lib/services.ts)
+  service         String
+  /// Local clinic date (Asia/Karachi), YYYY-MM-DD
+  date            String
+  /// Local clinic time, HH:mm (24h)
+  startTime       String
+  endTime         String
+  message         String?
+  status          AppointmentStatus @default(PENDING)
+  adminNote       String?
+  rescheduledFrom String?
+  /// SHA-256 of IP + salt (rate limiting only)
+  ipHash          String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([date, status])
+  @@index([phone])
+  @@index([status])
+  @@index([ipHash, createdAt])
+}
+
+model AdminUser {
+  id                 String   @id @default(cuid())
+  username           String   @unique
+  passwordHash       String
+  mustChangePassword Boolean  @default(true)
+  /// Bumped on password change => invalidates all older sessions
+  sessionVersion     Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// Single-row table (id = 1)
+model ClinicSettings {
+  id                     Int      @id @default(1)
+  clinicName             String   @default("One Smile Dental Studio")
+  doctorName             String   @default("Doctor Ayesha")
+  doctorPhone            String   @default("0332-3259577")
+  assistantPhone         String   @default("0331-6256127")
+  email                  String   @default("onesmilemystudio2021@gmail.com")
+  address                String   @default("4 C, D.H.A. Phase 7, Sehar Commercial Area, Phase 7, Defence Housing Authority, Karachi, Pakistan. 75500.")
+  facebookUrl            String   @default("https://www.facebook.com/OSDRAYEESHAAA")
+  instagramUrl           String   @default("https://www.instagram.com/onesmile.docayesha/")
+  slotMinutes            Int      @default(30)
+  bookingEnabled         Boolean  @default(true)
+  bookingDisabledMessage String   @default("Online booking is temporarily unavailable. Please call or WhatsApp us to arrange an appointment.")
+  /// Minimum minutes between "now" and the start of a bookable slot (same day)
+  leadMinutes            Int      @default(60)
+  /// How far ahead patients may book
+  maxAdvanceDays         Int      @default(60)
+  updatedAt              DateTime @updatedAt
+}
+
+/// weekday: 0 = Sunday … 6 = Saturday
+model WorkingHour {
+  weekday   Int     @id
+  isOpen    Boolean @default(true)
+  openTime  String  @default("17:00")
+  closeTime String  @default("21:00")
+}
+
+/// Whole-day closures: holidays, leave, etc.
+model BlockedDate {
+  id     String  @id @default(cuid())
+  date   String  @unique
+  reason String?
+  /// HOLIDAY | BLOCKED
+  kind   String  @default("BLOCKED")
+}
+
+/// Individual slots switched off by the admin
+model BlockedSlot {
+  id        String @id @default(cuid())
+  date      String
+  startTime String
+
+  @@unique([date, startTime])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  ip        String
+  username  String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([username, createdAt])
+}
