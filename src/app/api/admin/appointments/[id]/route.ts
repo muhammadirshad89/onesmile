@@ -4,6 +4,8 @@ import { json, readJson, requireAdmin } from '@/lib/api';
 import { getDaySlots } from '@/lib/availability';
 import { rescheduleSchema } from '@/lib/validation';
 import { slotKeyOf } from '@/lib/schedule';
+import { after } from 'next/server';
+import { notifyPatientConfirmed } from '@/lib/notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +34,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
       case 'confirm': {
         if (!['PENDING'].includes(appt.status)) return json({ error: 'Only pending requests can be confirmed.' }, 409);
         const u = await prisma.appointment.update({ where: { id }, data: { status: 'CONFIRMED', ...(note !== undefined ? { adminNote: note } : {}) } });
+        // Older requests that were still pending get the same WhatsApp confirmation (sent once only).
+        after(() => notifyPatientConfirmed(id));
         return json({ appointment: u });
       }
       case 'complete': {

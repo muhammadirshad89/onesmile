@@ -19,7 +19,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         <div className="container">
           <span className="eyebrow">Appointments</span>
           <h1>Book your appointment</h1>
-          <p className="lead">Choose a service, pick a date and select an available time. Our team will contact you to confirm.</p>
+          <p className="lead">Choose a service, pick a date and select an available time. Your appointment is confirmed instantly.</p>
         </div>
       </section>
       <section className="section">

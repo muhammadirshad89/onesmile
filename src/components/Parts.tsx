@@ -76,7 +76,7 @@ export function CtaBand({ clinic }: { clinic: ClinicInfo }) {
       <div className="container cta-inner">
         <div>
           <h2>Ready for a healthier, more confident smile?</h2>
-          <p>Book online in under a minute. Our team will contact you to confirm your appointment.</p>
+          <p>Book online in under a minute and receive instant confirmation.</p>
         </div>
         <div className="cta-actions">
           <Link href="/book" className="btn btn-light">Book Appointment</Link>

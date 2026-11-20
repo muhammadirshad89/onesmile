@@ -20,7 +20,7 @@ export default async function ContactPage() {
         <div className="container">
           <span className="eyebrow">Contact us</span>
           <h1>We’d love to hear from you</h1>
-          <p className="lead">Call, message or visit the studio. Or book online and we’ll contact you to confirm.</p>
+          <p className="lead">Call, message or visit the studio. Or book online and get instant confirmation.</p>
         </div>
       </section>
 

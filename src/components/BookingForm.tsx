@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SERVICES, serviceTitle } from '@/lib/services';
+import { BOOKING_SERVICES, CONSULTATION, serviceTitle } from '@/lib/services';
 import { addDays, formatDateLong, formatTime12, nowInKarachi } from '@/lib/schedule';
 import { telLink, waLink, WA_DEFAULT_MESSAGE } from '@/lib/contact';
 import { Icon, WhatsAppIcon } from './Icon';
@@ -16,7 +16,7 @@ interface Props {
   doctorPhone: string;
   assistantPhone: string;
 }
-interface Done { code: string; date: string; time: string; service: string; name: string }
+interface Done { code: string; whatsapp: boolean; date: string; time: string; service: string; name: string }
 
 const newKey = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -28,7 +28,7 @@ export function BookingForm({ preselect, bookingEnabled, disabledMessage, maxAdv
     fullName: '',
     phone: '',
     email: '',
-    service: SERVICES.some((s) => s.slug === preselect) ? (preselect as string) : '',
+    service: BOOKING_SERVICES.some((s) => s.slug === preselect) ? (preselect as string) : '',
     date: '',
     time: '',
     message: '',
@@ -115,7 +115,7 @@ export function BookingForm({ preselect, bookingEnabled, disabledMessage, maxAdv
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        setDone({ code: data.appointment.code, date: form.date, time: form.time, service: form.service, name: form.fullName.trim() });
+        setDone({ code: data.appointment.code, whatsapp: Boolean(data.notify?.whatsapp), date: form.date, time: form.time, service: form.service, name: form.fullName.trim() });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
@@ -160,23 +160,23 @@ export function BookingForm({ preselect, bookingEnabled, disabledMessage, maxAdv
     return (
       <div className="card success-card" role="status">
         <div className="success-icon"><Icon name="check" size={30} /></div>
-        <h2>Request received</h2>
+        <h2>Appointment confirmed</h2>
         <p className="lead">
-          Thank you for choosing One Smile Dental Studio. Your appointment request has been received. Our team will
-          contact you to confirm your appointment.
+          Your appointment has been successfully confirmed! We look forward to seeing you at One Smile Dental Studio.
         </p>
         <dl className="summary">
           <div><dt>Appointment ID</dt><dd className="mono">{done.code}</dd></div>
-          <div><dt>Status</dt><dd><span className="pill pill-pending">Pending confirmation</span></dd></div>
+          <div><dt>Status</dt><dd><span className="pill pill-confirmed">Confirmed</span></dd></div>
           <div><dt>Patient</dt><dd>{done.name}</dd></div>
           <div><dt>Service</dt><dd>{serviceTitle(done.service)}</dd></div>
-          <div><dt>Requested time</dt><dd>{formatDateLong(done.date)}, {formatTime12(done.time)}</dd></div>
+          <div><dt>Date &amp; time</dt><dd>{formatDateLong(done.date)}, {formatTime12(done.time)}</dd></div>
         </dl>
         <p className="muted small">
-          Please keep your appointment ID. Your slot is reserved for review but is <strong>not confirmed</strong> until our team contacts you.
+          Please keep your appointment ID.{done.whatsapp ? ' A confirmation message is also being sent to the WhatsApp number you entered.' : ''}
+          {' '}Need to change your time? Call or message us and we will help.
         </p>
         <div className="btn-row">
-          <a className="btn btn-wa" href={waLink(assistantPhone, `Hello One Smile Dental Studio, I have requested an appointment (ID ${done.code}). Please confirm.`)} target="_blank" rel="noopener noreferrer">
+          <a className="btn btn-wa" href={waLink(assistantPhone, `Hello One Smile Dental Studio, I have booked an appointment (ID ${done.code}).`)} target="_blank" rel="noopener noreferrer">
             <WhatsAppIcon size={18} /> Message on WhatsApp
           </a>
           <a className="btn btn-outline" href={telLink(assistantPhone)}><Icon name="phone" size={18} /> Call Assistant</a>
@@ -218,8 +218,9 @@ export function BookingForm({ preselect, bookingEnabled, disabledMessage, maxAdv
           <label htmlFor="f-service">Dental service <span className="req">*</span></label>
           <select {...fieldProps('service')} value={form.service} onChange={(e) => set('service', e.target.value)}>
             <option value="">Select a service…</option>
-            {SERVICES.map((s) => <option key={s.slug} value={s.slug}>{s.title}</option>)}
+            {BOOKING_SERVICES.map((s) => <option key={s.slug} value={s.slug}>{s.title}</option>)}
           </select>
+          {form.service === CONSULTATION.slug && <p className="muted small" id="service-hint">{CONSULTATION.hint}</p>}
           {err('service') && <p className="field-error" id="e-service">{err('service')}</p>}
         </div>
 
@@ -282,10 +283,10 @@ export function BookingForm({ preselect, bookingEnabled, disabledMessage, maxAdv
       {formError && <p className="form-error" role="alert">{formError}</p>}
 
       <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={submitting}>
-        {submitting ? 'Sending your request…' : 'Request Appointment'}
+        {submitting ? 'Confirming your appointment…' : 'Confirm My Appointment'}
       </button>
       <p className="muted small center">
-        Your request is reviewed by our team. It is not a confirmed appointment until we contact you.
+        Your appointment is confirmed instantly once you submit. Please arrive a few minutes early.
       </p>
     </form>
   );

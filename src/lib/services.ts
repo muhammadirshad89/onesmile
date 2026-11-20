@@ -80,6 +80,29 @@ export const SERVICES: Service[] = [
   },
 ];
 
-export const SERVICE_SLUGS = SERVICES.map((s) => s.slug) as [string, ...string[]];
+/**
+ * "Not sure" option – only for the booking form / admin / messages.
+ * Deliberately NOT part of SERVICES, so the public Services page, footer and structured data
+ * keep listing only the five real treatments.
+ */
+export const CONSULTATION = {
+  slug: 'not-sure-consultation',
+  title: 'Not Sure – I Need a Dental Consultation',
+  /** compact form used in WhatsApp summaries */
+  shortTitle: 'Not Sure – Dental Consultation',
+  hint: 'Not sure which treatment you need? No problem! Book a consultation and our dentist will guide you.',
+} as const;
 
-export const serviceTitle = (slug: string) => SERVICES.find((s) => s.slug === slug)?.title ?? slug;
+/** Everything a patient can pick in the booking dropdown (the consultation option goes last, clearly visible). */
+export const BOOKING_SERVICES: { slug: string; title: string }[] = [
+  ...SERVICES.map((s) => ({ slug: s.slug, title: s.title })),
+  { slug: CONSULTATION.slug, title: CONSULTATION.title },
+];
+
+export const SERVICE_SLUGS = BOOKING_SERVICES.map((s) => s.slug) as [string, ...string[]];
+
+export const serviceTitle = (slug: string) =>
+  BOOKING_SERVICES.find((s) => s.slug === slug)?.title ?? slug;
+
+/** Short label for chat messages. */
+export const serviceShortTitle = (slug: string) => (slug === CONSULTATION.slug ? CONSULTATION.shortTitle : serviceTitle(slug));

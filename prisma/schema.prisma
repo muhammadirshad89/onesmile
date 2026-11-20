@@ -117,3 +117,41 @@ model LoginAttempt {
   @@index([ip, createdAt])
   @@index([username, createdAt])
 }
+
+/// One row per WhatsApp message we attempt. `dedupeKey` is UNIQUE => a message can never be sent twice
+/// (patient confirmation: "patient_confirmation:<appointmentId>", doctor late notice: "doctor_late:<appointmentId>").
+/// status: PENDING (claimed, sending) | SENT | FAILED | SKIPPED
+model NotificationLog {
+  id                String    @id @default(cuid())
+  dedupeKey         String    @unique
+  /// PATIENT_CONFIRMATION | DOCTOR_LATE_BOOKING
+  kind              String
+  appointmentId     String?
+  recipient         String
+  status            String    @default("PENDING")
+  provider          String    @default("whatsapp_cloud")
+  providerMessageId String?
+  error             String?
+  attempts          Int       @default(0)
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([appointmentId])
+  @@index([kind, status, createdAt])
+}
+
+/// One row per clinic day (Asia/Karachi, "YYYY-MM-DD"). PRIMARY KEY on `date` => the 4 PM summary
+/// can only ever be claimed once per day, even if the scheduler fires twice or retries.
+/// status: SENDING | SENT | FAILED
+model DailyReport {
+  date              String    @id
+  status            String    @default("SENDING")
+  total             Int       @default(0)
+  providerMessageId String?
+  error             String?
+  attempts          Int       @default(0)
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}

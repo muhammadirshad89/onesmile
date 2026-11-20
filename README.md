@@ -36,6 +36,11 @@ npm run dev                 # http://localhost:3000
 | `ADMIN_INITIAL_PASSWORD` | the initial password supplied by the clinic. Used once, hashed with bcrypt, and the admin **must** change it at first login |
 | `SESSION_SECRET` | 32+ random characters – `openssl rand -base64 48` |
 | `IP_HASH_SALT` | any random string (rate-limiting hashes) |
+| `CRON_SECRET` | 16+ random characters. Protects `/api/cron/daily-report`; Vercel sends it automatically |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Meta WhatsApp Cloud API credentials (section 8). Leave empty = site works, nothing is sent |
+| `WHATSAPP_TEMPLATE_PATIENT_CONFIRMATION`, `WHATSAPP_TEMPLATE_DOCTOR_DAILY`, `WHATSAPP_TEMPLATE_DOCTOR_LATE` | names of the approved templates |
+| `DOCTOR_WHATSAPP_NUMBER` | optional; defaults to the doctor phone in Admin → Settings |
+| `WHATSAPP_API_VERSION`, `WHATSAPP_TEMPLATE_LANG` | optional (defaults `v21.0`, `en`) |
 
 Do **not** commit `.env` (it is in `.gitignore`).
 
@@ -83,11 +88,93 @@ Open `https://YOUR-DOMAIN/api/health` – it returns yes/no flags only (database
 
 ## 6. Day-to-day use
 
-* New requests appear under **Overview → Needs your review** (auto-refreshes every 30 s).
-* Open a request → **Confirm / Reject / Reschedule / Complete / Delete**. **WhatsApp patient** opens a ready-made message to the patient, because the site does not send SMS or email automatically.
+* **Bookings are confirmed automatically.** The slot is held immediately; nobody needs to approve it. Appointments made before this change and still *Pending* stay Pending until you act on them (they appear under **Overview → Needs your review**).
+* Open any appointment to see its details, the **WhatsApp confirmation** status (Sent / Failed / Not sent) and a **Resend** button when a send failed. **Reschedule**, **Cancel appointment**, **Complete** and **Delete** work as before. **WhatsApp patient** opens a normal chat for manual messages.
+* Confirming an old *Pending* request from the dashboard also sends the patient the WhatsApp confirmation (once only).
 * **Availability**: working hours, appointment length, holidays, individual slots, and a master switch to pause online booking.
 * Clinic info edited under **Settings** appears on the public site within ~5 minutes.
 
 ## 7. Tests
 
-`npm test` runs 20 tests of the slot, weekday, Sunday, past-date, timezone and phone logic – no database required.
+`npm test` runs every suite (slot/date/timezone logic, error handling, message builders, WhatsApp client, notifier de-duplication, daily-report scheduling). The notifier suites use an in-memory fake database, so **no real database, WhatsApp account or network is needed**. They do not replace a live test (section 10).
+
+## 8. WhatsApp setup (official Meta WhatsApp Cloud API)
+
+The site sends messages through Meta's official **WhatsApp Business Platform (Cloud API)**. No WhatsApp Web automation is used. Nothing is sent until you complete these steps; until then bookings work normally and the admin panel shows "Not sent".
+
+1. Create a Meta Business account and a **WhatsApp Business Account** at business.facebook.com / developers.facebook.com (create an app → add the *WhatsApp* product).
+2. Add and verify the clinic's sending number (a number that is **not** already registered in the regular WhatsApp app). Copy its **Phone number ID**.
+3. Business Settings → System users → create a system user → **Generate token** with `whatsapp_business_messaging` → this is `WHATSAPP_ACCESS_TOKEN` (permanent; never put it in the browser or in git).
+4. Create the three **message templates** below (WhatsApp Manager → Message templates). Category **Utility**, language **English** (`en`). Wait for approval (usually minutes to a day).
+5. Put the credentials and exact template names in the Vercel environment variables, redeploy.
+
+Meta only allows a business to start a chat with an approved **template**; a plain text message is delivered only inside a 24-hour window after the person messaged you. If a template name variable is left empty, the app falls back to plain text, which will usually **fail** for patients – so do configure the templates.
+
+**Template 1 – `appointment_confirmed`** (to the patient; 7 variables)
+```
+Hello {{1}},
+
+Your appointment at One Smile Dental Studio has been successfully CONFIRMED!
+
+Appointment ID: {{2}}
+Date: {{3}}
+Time: {{4}}
+Service: {{5}}
+
+Address: {{6}}
+
+For assistance, contact us at {{7}}.
+
+Thank you for choosing One Smile Dental Studio!
+```
+Sample values: Ayesha Khan / OSD-261123-K7QX2 / Monday, 23 November 2026 / 5:00 PM / General Dentistry / 4 C, D.H.A. Phase 7, Sehar Commercial Area, Karachi. / 0332-3259577
+
+**Template 2 – `doctor_daily_schedule`** (to the doctor at 4 PM; 3 variables)
+```
+Good Afternoon Doctor Ayesha!
+
+Here is your One Smile Dental Studio appointment schedule for today.
+
+Date: {{1}}
+Total Confirmed Appointments: {{2}}
+
+{{3}}
+
+Have a wonderful day!
+One Smile Dental Studio
+```
+`{{3}}` is the whole list on one line (WhatsApp forbids line breaks inside variables), e.g. `1) Name, 05:00 PM, 0300…, General Dentistry, ID OSD-… | 2) …`. With no appointments it is "No confirmed appointments are scheduled for today." and the total is 0.
+
+**Template 3 – `doctor_new_booking`** (booking for today made after the 4 PM summary; 6 variables)
+```
+Update for Doctor Ayesha: a new appointment was just confirmed for today, after the daily schedule was sent.
+
+Patient: {{1}}
+Time: {{2}}
+Phone: {{3}}
+Service: {{4}}
+ID: {{5}}
+Total confirmed appointments today: {{6}}
+```
+
+Patients are messaged on the number they typed (03xx numbers are converted to 92 3xx…). Once WhatsApp is configured, the booking form tells patients their confirmation will arrive on WhatsApp. Make sure this matches your WhatsApp opt-in obligations.
+
+## 9. Daily 4:00 PM summary (scheduler)
+
+`vercel.json` calls `GET /api/cron/daily-report` at **11:00 UTC = 4:00 PM Pakistan time** (Pakistan currently has no daylight saving) and again at 12:00 UTC as an automatic retry. The endpoint:
+* requires `Authorization: Bearer <CRON_SECRET>` (Vercel adds it when `CRON_SECRET` is set) – otherwise 401, and it refuses to run at all if the secret is missing;
+* never sends before 4:00 PM Karachi time, and sends **at most once per Karachi date** (the database enforces this, so duplicate or retried runs are harmless; a failed send is retried by the next run, up to 5 attempts);
+* lists every CONFIRMED appointment for that date, even if booked days earlier; cancelled/rejected are excluded; empty days get a short "no appointments" message;
+* if someone books for **today** after the summary went out, the doctor gets an extra "new booking" message (template 3).
+
+**Important – exact timing depends on your Vercel plan.** On the free **Hobby** plan Vercel guarantees cron timing only within the scheduled *hour* (the 11:00 job may run any time between 11:00 and 11:59 UTC, i.e. 4:00–4:59 PM). Exactly 4:00 PM needs **Vercel Pro** (per-minute precision) or an external scheduler such as cron-job.org calling `https://YOUR-DOMAIN/api/cron/daily-report` with the header `Authorization: Bearer <CRON_SECRET>` at 16:00 Asia/Karachi (the endpoint is safe to call from both).
+
+Manual test (after deploy), from any terminal:
+```bash
+curl -H "Authorization: Bearer YOUR_CRON_SECRET" https://YOUR-DOMAIN/api/cron/daily-report
+```
+Before 4 PM Karachi time it answers `too-early`; afterwards it sends (once) and answers `sent`/`already-sent`.
+
+## 10. Go-live test of WhatsApp (required)
+
+Automated tests prove the logic, not delivery. Before relying on it: (1) place a real booking with your own phone number and confirm the WhatsApp arrives once; (2) after 4 PM call the cron URL above and confirm the doctor receives the list; (3) check the appointment's **WhatsApp confirmation** status in the admin panel. If a message fails, the admin panel shows the reason; Meta's error codes (e.g. template not approved, wrong phone-number ID) are in Vercel → Logs.

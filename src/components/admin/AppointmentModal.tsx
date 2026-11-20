@@ -37,6 +37,29 @@ export function AppointmentModal({
   const [rtime, setRtime] = useState('');
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [slotNote, setSlotNote] = useState('');
+  const [wa, setWa] = useState<{ status: string; error: string | null } | null | undefined>(undefined);
+
+  const loadWa = useCallback(async () => {
+    try {
+      const d = await api<{ notifications: { kind: string; status: string; error: string | null }[] }>(`/api/admin/appointments/${appt.id}/notifications`);
+      setWa(d.notifications.find((n) => n.kind === 'PATIENT_CONFIRMATION') ?? null);
+    } catch {
+      setWa(undefined);
+    }
+  }, [appt.id]);
+  useEffect(() => { loadWa(); }, [loadWa]);
+
+  async function resendWa() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/admin/appointments/${appt.id}/notifications`, { method: 'POST' });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    await loadWa();
+    setBusy(false);
+  }
 
   const loadSlots = useCallback(
     async (date: string) => {
@@ -105,7 +128,22 @@ export function AppointmentModal({
         <div><dt>When</dt><dd>{fmtDate(appt.date)}<br />{fmtTime(appt.startTime)} – {fmtTime(appt.endTime)}</dd></div>
         <div className="wide"><dt>Patient message</dt><dd>{appt.message || '—'}</dd></div>
         {appt.rescheduledFrom && <div className="wide"><dt>Rescheduled from</dt><dd>{appt.rescheduledFrom}</dd></div>}
-        <div><dt>Requested on</dt><dd>{new Date(appt.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' })}</dd></div>
+        {wa !== undefined && (
+          <div className="wide">
+            <dt>WhatsApp confirmation</dt>
+            <dd>
+              {wa === null && 'Not sent'}
+              {wa?.status === 'SENT' && '✓ Sent to patient'}
+              {wa?.status === 'PENDING' && 'Sending…'}
+              {wa?.status === 'SKIPPED' && 'Not sent'}
+              {wa?.status === 'FAILED' && <>Failed{wa.error ? ` – ${wa.error}` : ''} </>}
+              {(wa === null || wa?.status === 'FAILED' || wa?.status === 'SKIPPED') && s === 'CONFIRMED' && (
+                <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={resendWa}>Resend</button>
+              )}
+            </dd>
+          </div>
+        )}
+        <div><dt>Booked on</dt><dd>{new Date(appt.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Karachi' })}</dd></div>
       </dl>
 
       <div className="field">
